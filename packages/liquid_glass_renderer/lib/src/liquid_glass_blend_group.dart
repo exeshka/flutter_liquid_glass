@@ -1,6 +1,9 @@
+import 'dart:ui';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_shaders/flutter_shaders.dart';
 import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
+import 'package:liquid_glass_renderer/src/internal/multi_shader_builder.dart';
 import 'package:liquid_glass_renderer/src/internal/render_liquid_glass_geometry.dart';
 import 'package:liquid_glass_renderer/src/internal/transform_tracking_repaint_boundary_mixin.dart';
 import 'package:liquid_glass_renderer/src/liquid_glass.dart';
@@ -78,16 +81,20 @@ class _LiquidGlassBlendGroupState extends State<LiquidGlassBlendGroup> {
 
     return _InheritedLiquidGlassBlendGroup(
       link: _geometryLink,
-      child: ShaderBuilder(
-        (context, shader, child) => _RawLiquidGlassBlendGroup(
+      child: MultiShaderBuilder(
+        (context, shaders, child) => _RawLiquidGlassBlendGroup(
           blend: widget.blend,
-          shader: shader,
+          geometryShader: shaders[0],
+          colorShader: shaders[1],
           link: _geometryLink,
           renderLink: InheritedGeometryRenderLink.of(context)!,
           settings: LiquidGlassRenderScope.of(context).settings,
           child: child,
         ),
-        assetKey: ShaderKeys.blendedGeometry,
+        assetKeys: [
+          ShaderKeys.blendedGeometry,
+          ShaderKeys.blendedColor,
+        ],
         child: widget.child,
       ),
     );
@@ -117,7 +124,8 @@ class _InheritedLiquidGlassBlendGroup extends InheritedWidget {
 class _RawLiquidGlassBlendGroup extends SingleChildRenderObjectWidget {
   const _RawLiquidGlassBlendGroup({
     required this.blend,
-    required this.shader,
+    required this.geometryShader,
+    required this.colorShader,
     required this.renderLink,
     required this.link,
     required this.settings,
@@ -125,7 +133,8 @@ class _RawLiquidGlassBlendGroup extends SingleChildRenderObjectWidget {
   });
 
   final double blend;
-  final FragmentShader shader;
+  final FragmentShader geometryShader;
+  final FragmentShader colorShader;
   final GeometryRenderLink renderLink;
   final GlassGroupLink link;
   final LiquidGlassSettings settings;
@@ -135,7 +144,8 @@ class _RawLiquidGlassBlendGroup extends SingleChildRenderObjectWidget {
     return RenderLiquidGlassBlendGroup(
       renderLink: renderLink,
       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-      geometryShader: shader,
+      geometryShader: geometryShader,
+      colorShader: colorShader,
       settings: settings,
       link: link,
       blend: blend,
@@ -163,13 +173,17 @@ class RenderLiquidGlassBlendGroup extends RenderLiquidGlassGeometry
     required super.renderLink,
     required super.devicePixelRatio,
     required super.geometryShader,
+    required FragmentShader colorShader,
     required super.settings,
     required GlassGroupLink link,
     required double blend,
   })  : _link = link,
+        _colorShader = colorShader,
         _blend = blend {
     link.addListener(_onLinkUpdate);
   }
+
+  final FragmentShader _colorShader;
 
   GlassGroupLink _link;
 
@@ -249,6 +263,61 @@ class RenderLiquidGlassBlendGroup extends RenderLiquidGlassGeometry
   }
 
   @override
+  Picture buildColorGeometryPicture(
+    Rect geometryBounds,
+    List<ShapeGeometry> shapes,
+  ) {
+    final width = (geometryBounds.width * devicePixelRatio).ceil();
+    final height = (geometryBounds.height * devicePixelRatio).ceil();
+
+    _colorShader.setFloatUniforms((value) {
+      value
+        ..setFloat(width.toDouble())
+        ..setFloat(height.toDouble())
+        ..setFloat(blend * devicePixelRatio)
+        ..setFloat(shapes.length.toDouble());
+
+      for (final shape in shapes) {
+        final center = shape.shapeBounds.center;
+        final size = shape.shapeBounds.size;
+        final color = shape.glassColor;
+        value
+          ..setFloat(shape.rawShapeType.shaderIndex)
+          ..setFloat(center.dx * devicePixelRatio)
+          ..setFloat(center.dy * devicePixelRatio)
+          ..setFloat(size.width * devicePixelRatio)
+          ..setFloat(size.height * devicePixelRatio)
+          ..setFloat(shape.rawCornerRadius * devicePixelRatio)
+          ..setFloat(color.r)
+          ..setFloat(color.g)
+          ..setFloat(color.b)
+          ..setFloat(color.a);
+      }
+    });
+
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+    final paint = Paint()..shader = _colorShader;
+
+    final leftPixel = (geometryBounds.left * devicePixelRatio).roundToDouble();
+    final topPixel = (geometryBounds.top * devicePixelRatio).roundToDouble();
+
+    canvas
+      ..translate(-leftPixel, -topPixel)
+      ..drawRect(
+        Rect.fromLTWH(
+          leftPixel,
+          topPixel,
+          width.toDouble(),
+          height.toDouble(),
+        ),
+        paint,
+      );
+
+    return recorder.endRecording();
+  }
+
+  @override
   (Rect, List<ShapeGeometry>, bool) gatherShapeData() {
     final shapes = <ShapeGeometry>[];
     final cachedShapes = geometry?.shapes ?? [];
@@ -262,7 +331,7 @@ class RenderLiquidGlassBlendGroup extends RenderLiquidGlassGeometry
           index,
           MapEntry(
             key: renderObject,
-            value: (shape, glassContainsChild),
+            value: (shape, glassContainsChild, glassColor),
           )
         ) in link.shapeEntries.indexed) {
       if (!renderObject.attached || !renderObject.hasSize) continue;
@@ -272,6 +341,7 @@ class RenderLiquidGlassBlendGroup extends RenderLiquidGlassGeometry
           renderObject,
           shape,
           glassContainsChild,
+          glassColor,
         );
         shapes.add(shapeData);
 
@@ -325,6 +395,7 @@ class RenderLiquidGlassBlendGroup extends RenderLiquidGlassGeometry
     RenderLiquidGlass renderObject,
     LiquidShape shape,
     bool glassContainsChild,
+    Color glassColor,
   ) {
     if (!hasSize) {
       throw StateError(
@@ -352,6 +423,7 @@ class RenderLiquidGlassBlendGroup extends RenderLiquidGlassGeometry
       renderObject: renderObject,
       shape: shape,
       glassContainsChild: glassContainsChild,
+      glassColor: glassColor,
       shapeBounds: blendGroupRect,
       shapeToGeometry: transformToGeometry,
     );
@@ -367,13 +439,14 @@ class GlassGroupLink with ChangeNotifier {
   GlassGroupLink();
 
   /// Information about a shape registered with this link.
-  final Map<RenderLiquidGlass, (LiquidShape shape, bool glassContainsChild)>
+  final Map<RenderLiquidGlass,
+          (LiquidShape shape, bool glassContainsChild, Color glassColor)>
       _shapes = {};
 
   List<
-      MapEntry<RenderLiquidGlass,
-          (LiquidShape shape, bool glassContainsChild)>> get shapeEntries =>
-      _shapes.entries.toList();
+          MapEntry<RenderLiquidGlass,
+              (LiquidShape shape, bool glassContainsChild, Color glassColor)>>
+      get shapeEntries => _shapes.entries.toList();
 
   /// Check if any shapes are registered.
   bool get hasShapes => _shapes.isNotEmpty;
@@ -383,8 +456,9 @@ class GlassGroupLink with ChangeNotifier {
     RenderLiquidGlass renderObject,
     LiquidShape shape, {
     required bool glassContainsChild,
+    required Color glassColor,
   }) {
-    _shapes[renderObject] = (shape, glassContainsChild);
+    _shapes[renderObject] = (shape, glassContainsChild, glassColor);
     notifyListeners();
   }
 
@@ -399,8 +473,9 @@ class GlassGroupLink with ChangeNotifier {
     RenderLiquidGlass renderObject,
     LiquidShape shape, {
     required bool glassContainsChild,
+    required Color glassColor,
   }) {
-    _shapes[renderObject] = (shape, glassContainsChild);
+    _shapes[renderObject] = (shape, glassContainsChild, glassColor);
     notifyListeners();
   }
 

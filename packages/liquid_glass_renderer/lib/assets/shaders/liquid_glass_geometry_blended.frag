@@ -5,7 +5,7 @@
 // Only needs to be re-run when shape geometry or layout changes
 
 #version 460 core
-precision mediump float;
+precision highp float;
 
 #include <flutter/runtime_effect.glsl>
 #include "sdf.glsl"
@@ -33,7 +33,7 @@ void main() {
     
     float sd = sceneSDF(fragCoord, int(uNumShapes), uShapeData, uBlend);
     
-    float foregroundAlpha = 1.0 - smoothstep(-2.0, 0.0, sd);
+    float foregroundAlpha = sdfAntiAliasAlpha(sd);
     if (foregroundAlpha < 0.01) {
         fragColor = vec4(0.0);
         return;

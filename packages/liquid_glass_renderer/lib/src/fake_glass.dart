@@ -23,16 +23,17 @@ class FakeGlass extends StatelessWidget {
     LiquidGlassSettings this.settings = const LiquidGlassSettings(),
     this.shadows = const [],
     super.key,
-  });
+  }) : _inLayer = false;
 
   /// Creates a new [FakeGlass] widget that takes settings from the nearest
   /// ancestor [LiquidGlassLayer].
   const FakeGlass.inLayer({
     required this.shape,
     required this.child,
+    this.settings,
     this.shadows = const [],
     super.key,
-  }) : settings = null;
+  }) : _inLayer = true;
 
   /// {@macro liquid_glass_renderer.LiquidGlass.shape}
   final LiquidShape shape;
@@ -42,6 +43,8 @@ class FakeGlass extends StatelessWidget {
   /// Some properties will not have any effect, such as `thickness` and
   /// `refractiveIndex`, since there is no actual refraction happening.
   final LiquidGlassSettings? settings;
+
+  final bool _inLayer;
 
   /// The list of shadows to paint around the glass shape.
   ///
@@ -60,7 +63,7 @@ class FakeGlass extends StatelessWidget {
 
     // If we are in a layer, we accept that layer's backdrop key.
     final backdropKey =
-        this.settings == null ? BackdropGroup.of(context)?.backdropKey : null;
+        _inLayer ? BackdropGroup.of(context)?.backdropKey : null;
     return GlassShadow(
       shape: shape,
       shadows: shadows,

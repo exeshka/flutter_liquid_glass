@@ -85,6 +85,9 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   /// Pre-rendered geometry texture in screen space
   ui.Image? _geometryImage;
 
+  /// Pre-rendered per-pixel glass color texture in screen space.
+  ui.Image? _geometryColorImage;
+
   /// The bounding box of the geometry matte in the coordinate space of the
   /// shader
   Rect _geometryMatteBounds = Rect.zero;
@@ -202,12 +205,13 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
 
       needsGeometryUpdate = false;
 
-      final (image, matteBounds) = _buildGeometryImage(
+      final (image, colorImage, matteBounds) = _buildGeometryImage(
         shapesWithGeometry,
         boundingBox,
       );
 
       _geometryImage = image;
+      _geometryColorImage = colorImage;
       _geometryMatteBounds = matteBounds;
     }
 
@@ -249,6 +253,8 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   void _clearGeometryImage() {
     _geometryImage?.dispose();
     _geometryImage = null;
+    _geometryColorImage?.dispose();
+    _geometryColorImage = null;
   }
 
   /// Subclasses implement the actual glass rendering
@@ -301,6 +307,31 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
     }
   }
 
+  @protected
+  void paintGeometryColorOverlay(PaintingContext context, Offset offset) {
+    if (_geometryColorImage case final geometryColorImage?) {
+      final backToThis = Matrix4.inverted(matteTransform).storage;
+      final bounds = MatrixUtils.transformRect(
+        matteTransform,
+        paintBounds,
+      ).snapToPixels(devicePixelRatio);
+      context.canvas
+        ..save()
+        ..transform(backToThis)
+        ..translate(
+          bounds.left,
+          bounds.top,
+        )
+        ..scale(1 / devicePixelRatio)
+        ..drawImage(
+          geometryColorImage,
+          offset * devicePixelRatio,
+          Paint()..filterQuality = FilterQuality.medium,
+        )
+        ..restore();
+    }
+  }
+
   @override
   @mustCallSuper
   void dispose() {
@@ -314,7 +345,7 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   @protected
   bool needsGeometryUpdate = true;
 
-  (ui.Image, Rect) _buildGeometryImage(
+  (ui.Image, ui.Image, Rect) _buildGeometryImage(
     List<(RenderLiquidGlassGeometry, GeometryCache, Matrix4)> geometries,
     Rect bounds,
   ) {
@@ -329,24 +360,28 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
         '${geometries.length} shapes at size ${size.width}x${size.height}:\n');
 
     final recorder = ui.PictureRecorder();
+    final colorRecorder = ui.PictureRecorder();
 
     final canvas = Canvas(recorder);
+    final colorCanvas = Canvas(colorRecorder);
 
     for (final (_, geometry, transform) in geometries) {
-      canvas
-        ..save()
-        ..scale(devicePixelRatio)
-        ..translate(
-          -boundsInMatteSpace.left,
-          -boundsInMatteSpace.top,
-        )
-        ..transform(matteTransform.storage)
-        ..transform(transform.storage)
-        ..scale(1 / devicePixelRatio)
-        ..translate(
-          geometry.matteBounds.topLeft.dx,
-          geometry.matteBounds.topLeft.dy,
-        );
+      for (final targetCanvas in [canvas, colorCanvas]) {
+        targetCanvas
+          ..save()
+          ..scale(devicePixelRatio)
+          ..translate(
+            -boundsInMatteSpace.left,
+            -boundsInMatteSpace.top,
+          )
+          ..transform(matteTransform.storage)
+          ..transform(transform.storage)
+          ..scale(1 / devicePixelRatio)
+          ..translate(
+            geometry.matteBounds.topLeft.dx,
+            geometry.matteBounds.topLeft.dy,
+          );
+      }
 
       switch (geometry) {
         case UnrenderedGeometryCache(matte: final picture):
@@ -354,25 +389,59 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
             '\t- Unrendered @ ${geometry.bounds}',
           );
           canvas.drawPicture(picture);
+          if (geometry.colorMatte case final colorPicture?) {
+            colorCanvas.drawPicture(colorPicture);
+          } else {
+            _paintFallbackGeometryColor(colorCanvas, geometry);
+          }
         case RenderedGeometryCache(matte: final image):
           buffer.writeln(
             '\t- Rendered @ ${geometry.bounds}',
           );
-          canvas.drawImage(image, Offset.zero, Paint());
+          canvas.drawImage(
+            image,
+            Offset.zero,
+            Paint()..filterQuality = FilterQuality.medium,
+          );
+          if (geometry.colorMatte case final colorImage?) {
+            colorCanvas.drawImage(
+              colorImage,
+              Offset.zero,
+              Paint()..filterQuality = FilterQuality.medium,
+            );
+          } else {
+            _paintFallbackGeometryColor(colorCanvas, geometry);
+          }
       }
 
       canvas.restore();
+      colorCanvas.restore();
     }
 
     final picture = recorder.endRecording();
+    final colorPicture = colorRecorder.endRecording();
     final image = picture.toImageSync(
+      size.width.ceil(),
+      size.height.ceil(),
+    );
+    final colorImage = colorPicture.toImageSync(
       size.width.ceil(),
       size.height.ceil(),
     );
 
     logger.fine(buffer.toString());
     picture.dispose();
-    return (image, boundsInMatteSpace);
+    colorPicture.dispose();
+    return (image, colorImage, boundsInMatteSpace);
+  }
+
+  void _paintFallbackGeometryColor(Canvas canvas, GeometryCache geometry) {
+    canvas.drawPath(
+      geometry.path,
+      Paint()
+        ..color = settings.effectiveGlassColor
+        ..style = PaintingStyle.fill,
+    );
   }
 }
 

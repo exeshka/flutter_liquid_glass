@@ -2,6 +2,11 @@
 // Reduced from 64 to 16 shapes to fit Impeller's uniform buffer limit (16 * 6 = 96 floats vs 384)
 #define MAX_SHAPES 16
 
+float sdfAntiAliasAlpha(float sd) {
+    float aa = max(abs(dFdx(sd)) + abs(dFdy(sd)), 1.0);
+    return clamp(0.5 - sd / aa, 0.0, 1.0);
+}
+
 float sdfRRect( in vec2 p, in vec2 b, in float r ) {
     float shortest = min(b.x, b.y);
     r = min(r, shortest);

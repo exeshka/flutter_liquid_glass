@@ -89,7 +89,7 @@ void main() {
     
     // Apply glass color using alpha blending
     vec4 finalColor;
-    finalColor.rgb = uGlassColor.rgb * uGlassColor.a + refractColor.rgb * (1.0 - uGlassColor.a);
+    finalColor.rgb = refractColor.rgb;
     finalColor.a = refractColor.a;
     finalColor.rgb = applySaturation(finalColor.rgb, uSaturation);
 

@@ -168,6 +168,14 @@ abstract class RenderLiquidGlassGeometry extends RenderProxyBox {
     List<ShapeGeometry> shapes,
   );
 
+  /// Builds an optional color matte for this geometry.
+  Picture? buildColorGeometryPicture(
+    Rect geometryBounds,
+    List<ShapeGeometry> shapes,
+  ) {
+    return null;
+  }
+
   /// Paints the contents of all shapes to the given [context] at the given
   /// [offset].
   void paintShapeContents(
@@ -245,6 +253,7 @@ abstract class RenderLiquidGlassGeometry extends RenderProxyBox {
     // Set the new geometry
     final newGeo = geometry = UnrenderedGeometryCache(
       matte: _buildGeometryPicture(snappedBounds, shapes),
+      colorMatte: buildColorGeometryPicture(snappedBounds, shapes),
       bounds: snappedBounds,
       matteBounds: matteBounds,
       shapes: shapes,
@@ -306,6 +315,7 @@ sealed class GeometryCache {
     required this.bounds,
     required this.shapes,
     required this.path,
+    this.hasColorMatte = false,
   });
 
   /// The bounds of the geometry in the coordinate space of its
@@ -318,6 +328,8 @@ sealed class GeometryCache {
   final List<ShapeGeometry> shapes;
 
   final Path path;
+
+  final bool hasColorMatte;
 
   /// Ensure that this geometry is rendered and potentially dispose this
   /// instance.
@@ -343,14 +355,17 @@ sealed class GeometryCache {
 class UnrenderedGeometryCache extends GeometryCache {
   const UnrenderedGeometryCache({
     required this.matte,
+    required this.colorMatte,
     required super.matteBounds,
     required super.bounds,
     required super.shapes,
     required super.path,
-  });
+  }) : super(hasColorMatte: colorMatte != null);
 
   /// The matte image representing the geometry.
   final Picture matte;
+
+  final Picture? colorMatte;
 
   @override
   Future<RenderedGeometryCache> renderAsync() async {
@@ -358,8 +373,13 @@ class UnrenderedGeometryCache extends GeometryCache {
       matteBounds.width.ceil(),
       matteBounds.height.ceil(),
     );
+    final colorImage = await colorMatte?.toImage(
+      matteBounds.width.ceil(),
+      matteBounds.height.ceil(),
+    );
     return RenderedGeometryCache(
       matte: image,
+      colorMatte: colorImage,
       matteBounds: matteBounds,
       bounds: bounds,
       shapes: shapes,
@@ -373,9 +393,14 @@ class UnrenderedGeometryCache extends GeometryCache {
       matteBounds.width.ceil(),
       matteBounds.height.ceil(),
     );
+    final colorImage = colorMatte?.toImageSync(
+      matteBounds.width.ceil(),
+      matteBounds.height.ceil(),
+    );
     dispose();
     return RenderedGeometryCache(
       matte: image,
+      colorMatte: colorImage,
       matteBounds: matteBounds,
       bounds: bounds,
       shapes: shapes,
@@ -387,6 +412,7 @@ class UnrenderedGeometryCache extends GeometryCache {
   @override
   void dispose() {
     matte.dispose();
+    colorMatte?.dispose();
   }
 }
 
@@ -397,14 +423,17 @@ class UnrenderedGeometryCache extends GeometryCache {
 class RenderedGeometryCache extends GeometryCache {
   const RenderedGeometryCache({
     required this.matte,
+    required this.colorMatte,
     required super.matteBounds,
     required super.bounds,
     required super.shapes,
     required super.path,
-  });
+  }) : super(hasColorMatte: colorMatte != null);
 
   /// The matte image representing the geometry.
   final Image matte;
+
+  final Image? colorMatte;
 
   @override
   RenderedGeometryCache render() => this;
@@ -416,6 +445,7 @@ class RenderedGeometryCache extends GeometryCache {
   @override
   void dispose() {
     matte.dispose();
+    colorMatte?.dispose();
   }
 }
 
@@ -461,6 +491,7 @@ class ShapeGeometry extends Equatable {
     required this.renderObject,
     required this.shape,
     required this.glassContainsChild,
+    required this.glassColor,
     required this.shapeBounds,
     this.shapeToGeometry,
   })  : rawCornerRadius = _getRadiusFromGlassShape(shape),
@@ -487,6 +518,8 @@ class ShapeGeometry extends Equatable {
 
   final bool glassContainsChild;
 
+  final Color glassColor;
+
   /// Bounds in geometry-local coordinates (for painting)
   final Rect shapeBounds;
 
@@ -497,6 +530,7 @@ class ShapeGeometry extends Equatable {
         renderObject,
         shape,
         glassContainsChild,
+        glassColor,
         shapeBounds,
       ];
 }

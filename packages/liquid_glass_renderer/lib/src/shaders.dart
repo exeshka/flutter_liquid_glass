@@ -16,6 +16,9 @@ abstract class ShaderKeys {
   static final blendedGeometry =
       '${_shadersRoot}lib/assets/shaders/liquid_glass_geometry_blended.frag';
 
+  static final blendedColor =
+      '${_shadersRoot}lib/assets/shaders/liquid_glass_color_blended.frag';
+
   static final liquidGlassRender =
       '${_shadersRoot}lib/assets/shaders/liquid_glass_final_render.frag';
 

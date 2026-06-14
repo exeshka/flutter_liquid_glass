@@ -302,6 +302,7 @@ class RenderLiquidGlassLayer extends LiquidGlassRenderObject
         context.pushLayer(
           shaderLayer,
           (context, offset) {
+            paintGeometryColorOverlay(context, offset);
             paintShapeContents(
               context,
               offset,

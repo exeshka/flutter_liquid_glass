@@ -41,6 +41,7 @@ class LiquidGlass extends StatelessWidget {
     this.glassContainsChild = false,
     this.clipBehavior = Clip.hardEdge,
     this.shadows = const [],
+    this.glassColor,
     super.key,
   })  : grouped = false,
         blendGroupLink = null,
@@ -66,6 +67,7 @@ class LiquidGlass extends StatelessWidget {
     this.glassContainsChild = false,
     this.clipBehavior = Clip.hardEdge,
     this.shadows = const [],
+    this.glassColor,
   })  : grouped = true,
         blendGroupLink = null,
         ownLayerConfig = (settings, fake),
@@ -84,6 +86,7 @@ class LiquidGlass extends StatelessWidget {
     this.clipBehavior = Clip.hardEdge,
     this.blendGroupLink,
     this.shadows = const [],
+    this.glassColor,
   })  : ownLayerConfig = null,
         grouped = true,
         _auto = false;
@@ -105,6 +108,7 @@ class LiquidGlass extends StatelessWidget {
     this.clipBehavior = Clip.hardEdge,
     this.blendGroupLink,
     this.shadows = const [],
+    this.glassColor,
   })  : ownLayerConfig = (settings, fake),
         grouped = false,
         _auto = false;
@@ -152,6 +156,12 @@ class LiquidGlass extends StatelessWidget {
   /// bleed through the translucent glass body.
   final List<BoxShadow> shadows;
 
+  /// Overrides the layer's glass color for this specific glass shape.
+  ///
+  /// When multiple colored shapes are in a [LiquidGlassBlendGroup], their
+  /// colors are blended together in the merged area.
+  final Color? glassColor;
+
   /// Whether this glass should automatically detect a parent layer.
   final bool _auto;
 
@@ -169,7 +179,7 @@ class LiquidGlass extends StatelessWidget {
       if (fake) {
         return FakeGlass(
           shape: shape,
-          settings: settings,
+          settings: _settingsWithShapeColor(settings),
           shadows: shadows,
           child: child,
         );
@@ -192,6 +202,7 @@ class LiquidGlass extends StatelessWidget {
     if (fake) {
       return FakeGlass.inLayer(
         shape: shape,
+        settings: _settingsWithShapeColor(scopeSettings.settings),
         shadows: shadows,
         child: child,
       );
@@ -232,6 +243,7 @@ class LiquidGlass extends StatelessWidget {
     if (fake) {
       return FakeGlass.inLayer(
         shape: shape,
+        settings: _settingsWithShapeColor(scopeSettings.settings),
         shadows: shadows,
         child: child,
       );
@@ -265,6 +277,7 @@ class LiquidGlass extends StatelessWidget {
     if (!ImageFilter.isShaderFilterSupported) {
       return FakeGlass(
         shape: shape,
+        settings: _settingsWithShapeColor(settings),
         shadows: shadows,
         child: child,
       );
@@ -276,6 +289,7 @@ class LiquidGlass extends StatelessWidget {
       shadows: shadows,
       child: _RawLiquidGlass(
         blendGroupLink: blendGroupLink ?? LiquidGlassBlendGroup.of(context),
+        glassColor: _effectiveShapeColor(settings),
         shape: shape,
         glassContainsChild: glassContainsChild,
         child: ClipPath(
@@ -291,6 +305,17 @@ class LiquidGlass extends StatelessWidget {
       ),
     );
   }
+
+  LiquidGlassSettings _settingsWithShapeColor(LiquidGlassSettings settings) {
+    return glassColor == null
+        ? settings
+        : settings.copyWith(glassColor: glassColor);
+  }
+
+  Color _effectiveShapeColor(LiquidGlassSettings settings) {
+    final color = glassColor ?? settings.glassColor;
+    return color.withValues(alpha: color.a * settings.visibility);
+  }
 }
 
 class _RawLiquidGlass extends SingleChildRenderObjectWidget {
@@ -299,11 +324,14 @@ class _RawLiquidGlass extends SingleChildRenderObjectWidget {
     required this.shape,
     required this.glassContainsChild,
     required this.blendGroupLink,
+    required this.glassColor,
   });
 
   final LiquidShape shape;
 
   final bool glassContainsChild;
+
+  final Color glassColor;
 
   final GlassGroupLink? blendGroupLink;
 
@@ -313,6 +341,7 @@ class _RawLiquidGlass extends SingleChildRenderObjectWidget {
       shape: shape,
       glassContainsChild: glassContainsChild,
       blendGroupLink: blendGroupLink,
+      glassColor: glassColor,
     );
   }
 
@@ -324,7 +353,8 @@ class _RawLiquidGlass extends SingleChildRenderObjectWidget {
     renderObject
       ..shape = shape
       ..glassContainsChild = glassContainsChild
-      ..blendGroupLink = blendGroupLink;
+      ..blendGroupLink = blendGroupLink
+      ..glassColor = glassColor;
   }
 }
 
@@ -335,9 +365,11 @@ class RenderLiquidGlass extends RenderProxyBox
     required LiquidShape shape,
     required bool glassContainsChild,
     required GlassGroupLink? blendGroupLink,
+    required Color glassColor,
   })  : _shape = shape,
         _glassContainsChild = glassContainsChild,
-        _blendGroupLink = blendGroupLink;
+        _blendGroupLink = blendGroupLink,
+        _glassColor = glassColor;
 
   late LiquidShape _shape;
   LiquidShape get shape => _shape;
@@ -364,6 +396,14 @@ class RenderLiquidGlass extends RenderProxyBox
     _registerWithLink();
   }
 
+  Color _glassColor;
+  Color get glassColor => _glassColor;
+  set glassColor(Color value) {
+    if (_glassColor == value) return;
+    _glassColor = value;
+    _updateBlendGroupLink();
+  }
+
   final transformLayerHandle = LayerHandle<TransformLayer>();
 
   @override
@@ -384,6 +424,7 @@ class RenderLiquidGlass extends RenderProxyBox
       _blendGroupLink!.registerShape(
         this,
         _shape,
+        glassColor: _glassColor,
         glassContainsChild: _glassContainsChild,
       );
     }
@@ -397,6 +438,7 @@ class RenderLiquidGlass extends RenderProxyBox
     _blendGroupLink?.updateShape(
       this,
       _shape,
+      glassColor: _glassColor,
       glassContainsChild: _glassContainsChild,
     );
   }

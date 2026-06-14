@@ -10,6 +10,7 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   await MultiShaderBuilder.precacheShaders([
     ShaderKeys.fakeGlassColor,
     ShaderKeys.blendedGeometry,
+    ShaderKeys.blendedColor,
     ShaderKeys.liquidGlassRender,
     ShaderKeys.liquidGlassFilterShader,
     ShaderKeys.glassify,

@@ -61,9 +61,11 @@ class BasicApp extends HookWidget {
       child: CupertinoPageScaffold(
         child: Stack(
           children: [
-            if (tab.value == 1)
-              _GlassListTab(fake: fake.value)
-            else ...[
+            if (tab.value == 1) ...[
+              _GlassListTab(fake: fake.value),
+            ] else if (tab.value == 2) ...[
+              _BlendPlaygroundTab(fake: fake.value),
+            ] else ...[
               CustomScrollView(
                 slivers: [
                   SliverGrid(
@@ -227,6 +229,10 @@ class BasicApp extends HookWidget {
                       icon: CupertinoIcons.list_bullet,
                     ),
                     LiquidGlassBottomBarTab(
+                      label: 'Blend',
+                      icon: CupertinoIcons.circle_grid_3x3_fill,
+                    ),
+                    LiquidGlassBottomBarTab(
                       label: 'Profile',
                       icon: CupertinoIcons.person,
                     ),
@@ -246,6 +252,190 @@ class BasicApp extends HookWidget {
         ),
       ),
     );
+  }
+}
+
+class _BlendPlaygroundTab extends StatefulWidget {
+  const _BlendPlaygroundTab({required this.fake});
+
+  final bool fake;
+
+  @override
+  State<_BlendPlaygroundTab> createState() => _BlendPlaygroundTabState();
+}
+
+class _BlendPlaygroundTabState extends State<_BlendPlaygroundTab> {
+  static const _itemSize = Size(150, 110);
+
+  static const _shadows = [
+    BoxShadow(
+      blurStyle: BlurStyle.outer,
+      color: Color.from(alpha: 0.08, red: 0, green: 0, blue: 0),
+      offset: Offset(0, 3),
+      blurRadius: 6,
+    ),
+    BoxShadow(
+      blurStyle: BlurStyle.outer,
+      color: Color.from(alpha: 0.18, red: 0, green: 0, blue: 0),
+      offset: Offset(0, 16),
+      blurRadius: 42,
+    ),
+  ];
+
+  List<Offset>? _positions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset('assets/wallpaper.webp', fit: BoxFit.cover),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: const Alignment(0.2, -0.4),
+              radius: 1.2,
+              colors: [
+                Colors.white.withValues(alpha: 0.12),
+                Colors.black.withValues(alpha: 0.24),
+              ],
+            ),
+          ),
+        ),
+        ListenableBuilder(
+          listenable: Listenable.merge([settingsNotifier, blendNotifier]),
+          builder: (context, child) {
+            final settings = settingsNotifier.value.copyWith(
+              glassColor: CupertinoTheme.of(
+                context,
+              ).barBackgroundColor.withValues(alpha: 0.18),
+              blur: max(settingsNotifier.value.blur, 8),
+              saturation: max(settingsNotifier.value.saturation, 1.25),
+            );
+
+            return LiquidGlassLayer(
+              fake: widget.fake,
+              useBackdropGroup: true,
+              settings: settings,
+              child: LiquidGlassBlendGroup(
+                blend: blendNotifier.value,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final size = Size(
+                      constraints.maxWidth,
+                      constraints.maxHeight,
+                    );
+                    final positions = _ensurePositions(size);
+
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        for (var i = 0; i < positions.length; i++)
+                          Positioned(
+                            left: positions[i].dx,
+                            top: positions[i].dy,
+                            child: _DraggableGlassTile(
+                              index: i,
+                              onPanUpdate: (delta) {
+                                setState(() {
+                                  positions[i] = _clampOffset(
+                                    positions[i] + delta,
+                                    size,
+                                  );
+                                });
+                              },
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  List<Offset> _ensurePositions(Size size) {
+    final positions = _positions;
+    if (positions != null) {
+      return positions..replaceRange(
+        0,
+        positions.length,
+        positions.map((position) => _clampOffset(position, size)),
+      );
+    }
+
+    final center = Offset(
+      (size.width - _itemSize.width) / 2,
+      (size.height - _itemSize.height) / 2,
+    );
+    return _positions = [
+      _clampOffset(center + const Offset(-90, -70), size),
+      _clampOffset(center + const Offset(65, -8), size),
+      _clampOffset(center + const Offset(-8, 110), size),
+    ];
+  }
+
+  Offset _clampOffset(Offset offset, Size size) {
+    final maxX = max(size.width - _itemSize.width, 0.0);
+    final maxY = max(size.height - _itemSize.height - 96, 72.0);
+    return Offset(
+      offset.dx.clamp(0.0, maxX),
+      offset.dy.clamp(72.0, maxY),
+    );
+  }
+}
+
+class _DraggableGlassTile extends StatelessWidget {
+  const _DraggableGlassTile({
+    required this.index,
+    required this.onPanUpdate,
+  });
+
+  final int index;
+  final ValueChanged<Offset> onPanUpdate;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      onPanUpdate: (details) => onPanUpdate(details.delta),
+      child: LiquidStretch(
+        child: LiquidGlass.grouped(
+          glassColor: _glassColorForIndex(index),
+          // shadows: _BlendPlaygroundTabState._shadows,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 32),
+          child: GlassGlow(
+            child: SizedBox.fromSize(
+              size: _BlendPlaygroundTabState._itemSize,
+              child: Center(
+                child: Text(
+                  String.fromCharCode(65 + index),
+                  style: const TextStyle(
+                    color: CupertinoColors.white,
+                    fontSize: 38,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _glassColorForIndex(int index) {
+    const colors = [
+      Color.fromRGBO(255, 64, 96, 0.925),
+      Color.fromRGBO(64, 169, 255, 0.728),
+      Color.fromRGBO(120, 255, 170, 0.928),
+    ];
+    return colors[index % colors.length];
   }
 }
 
