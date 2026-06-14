@@ -10,6 +10,7 @@ import 'package:flutter_shaders/flutter_shaders.dart';
 import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 import 'package:liquid_glass_renderer/src/internal/render_liquid_glass_geometry.dart';
 import 'package:liquid_glass_renderer/src/internal/snap_rect_to_pixels.dart';
+import 'package:liquid_glass_renderer/src/internal/transform_tracking_repaint_boundary_mixin.dart';
 import 'package:liquid_glass_renderer/src/logging.dart';
 import 'package:meta/meta.dart';
 
@@ -28,6 +29,7 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
         _backdropKey = backdropKey,
         _link = link {
     _updateShaderSettings();
+    _link.addListener(_onLinkNeedsPaint);
   }
 
   static final logger = Logger(LgrLogNames.render);
@@ -43,8 +45,14 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   GeometryRenderLink get link => _link;
   set link(GeometryRenderLink value) {
     if (_link == value) return;
+    _link.removeListener(_onLinkNeedsPaint);
     markNeedsPaint();
     _link = value;
+    _link.addListener(_onLinkNeedsPaint);
+  }
+
+  void _onLinkNeedsPaint() {
+    markNeedsPaint();
   }
 
   LiquidGlassSettings? _settings;
@@ -130,6 +138,11 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   @override
   @nonVirtual
   void paint(PaintingContext context, Offset offset) {
+    if (this case final TransformTrackingRenderObjectMixin transformTracker
+        when transformTracker.checkForTransformChange()) {
+      needsGeometryUpdate = true;
+    }
+
     logger.finest('$hashCode Painting liquid glass with '
         '${link._shapeGeometries.length} shapes.');
 
@@ -291,6 +304,7 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
   @override
   @mustCallSuper
   void dispose() {
+    _link.removeListener(_onLinkNeedsPaint);
     _clearGeometryImage();
     super.dispose();
   }
@@ -363,7 +377,7 @@ abstract class LiquidGlassRenderObject extends RenderProxyBox {
 }
 
 @internal
-class GeometryRenderLink {
+class GeometryRenderLink with ChangeNotifier {
   final List<RenderLiquidGlassGeometry> _shapeGeometries = [];
 
   UnmodifiableListView<RenderLiquidGlassGeometry> get shapes =>
@@ -382,18 +396,28 @@ class GeometryRenderLink {
   ) {
     _dirty = true;
     _shapeGeometries.add(renderObject);
+    notifyListeners();
   }
 
   void markRebuilt(RenderLiquidGlassGeometry renderObject) {
     _dirty = true;
   }
 
-  void unregisterGeometry(RenderLiquidGlassGeometry renderObject) {
-    _shapeGeometries.remove(renderObject);
+  void markNeedsUpdate() {
+    _dirty = true;
+    notifyListeners();
   }
 
+  void unregisterGeometry(RenderLiquidGlassGeometry renderObject) {
+    _shapeGeometries.remove(renderObject);
+    _dirty = true;
+    notifyListeners();
+  }
+
+  @override
   void dispose() {
     _shapeGeometries.clear();
+    super.dispose();
   }
 }
 

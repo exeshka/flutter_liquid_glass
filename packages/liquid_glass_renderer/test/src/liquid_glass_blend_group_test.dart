@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 import 'package:liquid_glass_renderer/src/internal/render_liquid_glass_geometry.dart';
 import 'package:liquid_glass_renderer/src/liquid_glass_blend_group.dart';
+import 'package:liquid_glass_renderer/src/rendering/liquid_glass_layer.dart';
 import 'package:liquid_glass_renderer/src/rendering/liquid_glass_render_object.dart';
 
 void main() {
@@ -102,6 +103,30 @@ void main() {
           }
         }
       }
+    });
+
+    testWidgets('marks parent layer dirty when its transform changes',
+        (tester) async {
+      await tester.pumpWidget(build(const LiquidGlassSettings(), 20));
+      await tester.pumpAndSettle();
+
+      final blendGroup = tester.renderObject<RenderLiquidGlassBlendGroup>(
+        find.byKey(blendGroupKey),
+      );
+      final layers = tester
+          .allRenderObjects
+          .whereType<RenderLiquidGlassLayer>()
+          .where(
+            (renderObject) => renderObject.link.shapes.contains(blendGroup),
+          )
+          .toList();
+
+      expect(layers, isNotEmpty);
+      expect(layers.any((layer) => layer.debugNeedsPaint), isFalse);
+
+      blendGroup.onTransformChanged();
+
+      expect(layers.any((layer) => layer.debugNeedsPaint), isTrue);
     });
   });
 }

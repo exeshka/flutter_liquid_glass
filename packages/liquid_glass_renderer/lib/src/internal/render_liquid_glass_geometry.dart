@@ -1,10 +1,12 @@
 import 'dart:ui';
 
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_shaders/flutter_shaders.dart';
 import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
 import 'package:liquid_glass_renderer/src/internal/snap_rect_to_pixels.dart';
+import 'package:liquid_glass_renderer/src/internal/transform_tracking_repaint_boundary_mixin.dart';
 import 'package:liquid_glass_renderer/src/liquid_glass.dart';
 import 'package:liquid_glass_renderer/src/liquid_glass_blend_group.dart';
 import 'package:liquid_glass_renderer/src/logging.dart';
@@ -115,7 +117,7 @@ abstract class RenderLiquidGlassGeometry extends RenderProxyBox {
   /// update. Otherwise, it will be marked as possibly needing an update,
   /// unless it is already marked as definitely needing an update.
   @protected
-  void markGeometryNeedsUpdate({bool force = false}) {
+  void markGeometryNeedsUpdate({bool force = false, bool notifyParent = true}) {
     final newState = force
         ? LiquidGlassGeometryState.needsUpdate
         : LiquidGlassGeometryState.mightNeedUpdate;
@@ -127,6 +129,9 @@ abstract class RenderLiquidGlassGeometry extends RenderProxyBox {
         LiquidGlassGeometryState.needsUpdate,
       _ => LiquidGlassGeometryState.mightNeedUpdate,
     };
+    if (notifyParent) {
+      renderLink?.markNeedsUpdate();
+    }
   }
 
   @override
@@ -196,6 +201,11 @@ abstract class RenderLiquidGlassGeometry extends RenderProxyBox {
 
   /// Should be called from within [paint] to maybe rebuild the [geometry].
   GeometryCache? maybeRebuildGeometry() {
+    if (this case final TransformTrackingRenderObjectMixin transformTracker
+        when transformTracker.checkForTransformChange()) {
+      markGeometryNeedsUpdate(notifyParent: false);
+    }
+
     if (geometryState == LiquidGlassGeometryState.updated && geometry != null) {
       return geometry;
     }

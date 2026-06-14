@@ -71,6 +71,10 @@ mixin TransformTrackingRenderObjectMixin on RenderProxyBox {
       };
   }
 
+  bool checkForTransformChange() {
+    return layer?.checkForTransformChange(notify: false) ?? false;
+  }
+
   void onTransformChanged();
 }
 
@@ -85,12 +89,21 @@ class GeometryTransformTrackingLayer extends OffsetLayer {
   @override
   bool get alwaysNeedsAddToScene => true;
 
+  bool checkForTransformChange({bool notify = true}) {
+    final currentTransform = renderObject?.getTransformTo(null);
+    if (MatrixUtils.matrixEquals(currentTransform, _lastTransform)) {
+      return false;
+    }
+
+    _lastTransform = currentTransform;
+    if (notify) {
+      onTransformChanged?.call();
+    }
+    return true;
+  }
+
   @override
   void addToScene(ui.SceneBuilder builder) {
-    final currentTransform = renderObject?.getTransformTo(null);
-    if (!MatrixUtils.matrixEquals(currentTransform, _lastTransform)) {
-      onTransformChanged?.call();
-      _lastTransform = currentTransform;
-    }
+    checkForTransformChange();
   }
 }
